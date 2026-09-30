@@ -1,0 +1,10 @@
+// Set numeric/date/boolean types after import before adding these measures.
+Customers = DISTINCTCOUNT(customer_360[customer_id])
+Active Members = CALCULATE([Customers], customer_360[status] = "Active")
+Current MRR = CALCULATE(SUM(customer_360[monthly_price]), customer_360[status] = "Active")
+Collections = SUM(monthly_kpis[collected_revenue])
+Learning Sessions = SUM(monthly_kpis[sessions])
+Failed Payments = SUM(monthly_kpis[failed_payments])
+Collected Customer Value = SUM(customer_360[monetary])
+Retention Reviews = CALCULATE([Customers], customer_360[review_required] = TRUE())
+Monthly Revenue Exposure = SUM(customer_360[monthly_revenue_exposure])
