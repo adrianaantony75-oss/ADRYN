@@ -1,5 +1,9 @@
 fastapi>=0.115,<1
 uvicorn>=0.34,<1
 pydantic>=2.10,<3
-# Optional, only for BOT_MODE=ccxt (live/testnet exchange orders):
-# ccxt>=4.4
+python-multipart>=0.0.20
+pandas>=2.2
+numpy>=2.0
+yfinance>=0.2.50       # free delayed data (skip if you use FYERS)
+anthropic>=1.0         # optional: AI mentor / screen reading
+# ccxt>=4.4            # optional: crypto exchange orders (BOT_MODE=ccxt)

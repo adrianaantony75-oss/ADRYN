@@ -3,10 +3,13 @@ name = "adryn-bot"
 version = "0.1.0"
 description = "TradingView webhook trading bot (paper trading by default, ccxt for exchanges)"
 requires-python = ">=3.11"
-dependencies = ["fastapi>=0.115,<1", "uvicorn>=0.34,<1", "pydantic>=2.10,<3"]
+dependencies = ["fastapi>=0.115,<1", "uvicorn>=0.34,<1", "pydantic>=2.10,<3",
+                "python-multipart>=0.0.20", "pandas>=2.2", "numpy>=2.0"]
 
 [project.optional-dependencies]
 exchange = ["ccxt>=4.4"]
+data = ["yfinance>=0.2.50"]
+ai = ["anthropic>=1.0"]
 dev = ["pytest>=8", "httpx>=0.28,<1", "ruff>=0.9"]
 
 [tool.pytest.ini_options]
@@ -17,9 +20,15 @@ pythonpath = ["."]
 line-length = 100
 target-version = "py311"
 
+[tool.ruff.lint.flake8-bugbear]
+extend-immutable-calls = ["fastapi.File", "fastapi.Form", "fastapi.Header"]
+
 [build-system]
 requires = ["setuptools>=75.0.0"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools]
-packages = ["adryn_bot"]
+packages = ["adryn_bot", "adryn_bot.assistant"]
+
+[tool.setuptools.package-data]
+"adryn_bot.assistant" = ["page.html"]

@@ -1,0 +1,304 @@
+//@version=6
+// ADRYN Pro Assistant — trade-plan indicator for TradingView.
+// Shows BUY / SELL signals with Entry, Stop loss (SL), TP1 / TP2 / TP3, position size from
+// your capital, breakout & fakeout detection, multi-timeframe trend and a dashboard.
+//
+// Setups (all widely used by discretionary and systematic traders):
+//   1. Trend pullback  — EMA stack + Supertrend agree, price pulls back to the 21 EMA / VWAP
+//                         and closes back in the trend direction with RSI confirming.
+//   2. Breakout        — close beyond the N-bar range high/low on above-average volume.
+//   3. Fakeout reversal — price breaks a level, fails and closes back inside within a few bars
+//                         (a trap for breakout traders), signalling the opposite direction.
+//   4. VWAP reclaim (scalping) — intraday cross of VWAP with momentum and volume.
+// Stop = beyond the recent swing or ATR stop (whichever is tighter but at least 0.5 ATR).
+// Targets = 1R, 2R, 3R (configurable).
+//
+// Educational tool. Signals are probabilities, not certainties. Not financial advice.
+indicator("ADRYN Pro Assistant", shorttitle = "ADRYN Pro", overlay = true,
+     max_labels_count = 500, max_lines_count = 500)
+
+// ───────── Inputs ─────────
+grpA = "Account"
+capital   = input.float(100000, "Capital", minval = 1, group = grpA)
+riskPct   = input.float(1.0, "Risk per trade %", minval = 0.1, maxval = 10, step = 0.1, group = grpA)
+maxAlloc  = input.float(100, "Max capital in one trade %", minval = 1, maxval = 500, group = grpA,
+     tooltip = "Above 100% only if you use leverage / margin")
+
+grpM = "Mode"
+mode = input.string("Intraday", "Trading style", options = ["Scalping", "Intraday", "Swing"], group = grpM,
+     tooltip = "Scalping: 1-5 min charts. Intraday: 5-15 min. Swing: 1H-Daily.")
+useTrend    = input.bool(true, "Trend pullback signals", group = grpM)
+useBreakout = input.bool(true, "Breakout signals", group = grpM)
+useFakeout  = input.bool(true, "Fakeout reversal signals", group = grpM)
+useVwap     = input.bool(true, "VWAP reclaim signals (intraday)", group = grpM)
+allowShort  = input.bool(true, "Show SELL signals", group = grpM)
+minQuality  = input.int(3, "Min signal quality (1-5)", minval = 1, maxval = 5, group = grpM)
+
+grpT = "Targets"
+tp1R = input.float(1.0, "TP1 (R multiple)", step = 0.1, group = grpT)
+tp2R = input.float(2.0, "TP2 (R multiple)", step = 0.1, group = grpT)
+tp3R = input.float(3.0, "TP3 (R multiple)", step = 0.1, group = grpT)
+showLevels = input.bool(true, "Draw Entry / SL / TP lines", group = grpT)
+showSR     = input.bool(true, "Show support / resistance", group = grpT)
+showDash   = input.bool(true, "Show dashboard", group = grpT)
+
+grpW = "Webhook (optional)"
+passphrase = input.string("change-me", "Bot passphrase", group = grpW)
+
+// Mode presets
+fastLen  = mode == "Scalping" ? 9  : mode == "Intraday" ? 21 : 21
+slowLen  = mode == "Scalping" ? 21 : mode == "Intraday" ? 50 : 50
+trendLen = mode == "Scalping" ? 50 : 200
+rangeLen = mode == "Scalping" ? 15 : mode == "Intraday" ? 20 : 55
+swingLen = mode == "Scalping" ? 3  : 5
+stMult   = mode == "Scalping" ? 2.0 : 3.0
+atrStopM = mode == "Scalping" ? 1.0 : mode == "Intraday" ? 1.5 : 2.0
+
+// ───────── Core indicators ─────────
+atr      = ta.atr(14)
+emaFast  = ta.ema(close, fastLen)
+emaSlow  = ta.ema(close, slowLen)
+emaTrend = ta.ema(close, trendLen)
+rsi      = ta.rsi(close, 14)
+[stLine, stDir] = ta.supertrend(stMult, 10)   // stDir < 0 = uptrend
+[_dip, _dim, adx] = ta.dmi(14, 14)
+vwap     = ta.vwap(hlc3)
+volAvg   = ta.sma(volume, 20)
+volRatio = volAvg > 0 ? volume / volAvg : 1.0
+isIntraday = timeframe.isintraday
+
+upTrend   = close > emaTrend and emaFast > emaSlow and stDir < 0
+downTrend = close < emaTrend and emaFast < emaSlow and stDir > 0
+
+// Range / levels (previous bars only, so no repainting)
+rangeHigh = ta.highest(high, rangeLen)[1]
+rangeLow  = ta.lowest(low, rangeLen)[1]
+swingLow  = ta.lowest(low, swingLen * 2)
+swingHigh = ta.highest(high, swingLen * 2)
+
+// Pivot support / resistance
+ph = ta.pivothigh(high, swingLen, swingLen)
+pl = ta.pivotlow(low, swingLen, swingLen)
+var float lastRes = na
+var float lastSup = na
+if not na(ph)
+    lastRes := ph
+if not na(pl)
+    lastSup := pl
+
+// ───────── Setups ─────────
+// 1) Trend pullback
+pullLong  = upTrend and low <= emaFast and close > emaFast and close > open and rsi > 45 and rsi < 70
+pullShort = downTrend and high >= emaFast and close < emaFast and close < open and rsi < 55 and rsi > 30
+
+// 2) Breakout with volume
+boLong  = close > rangeHigh and close[1] <= rangeHigh[1] and volRatio > 1.5 and close > emaSlow
+boShort = close < rangeLow and close[1] >= rangeLow[1] and volRatio > 1.5 and close < emaSlow
+
+// 3) Fakeout: broke a level within the last 3 bars, now closes back inside with a strong candle
+brokeUp   = high[1] > rangeHigh[1] or high[2] > rangeHigh[2]
+brokeDown = low[1] < rangeLow[1] or low[2] < rangeLow[2]
+// Fakeout = level was pierced in the last 2 bars, but this bar closes back inside, against the break
+fakeShortOk = brokeUp and close < rangeHigh and close < open and close < close[1]
+fakeLongOk  = brokeDown and close > rangeLow and close > open and close > close[1]
+
+// 4) VWAP reclaim (intraday only)
+vwUp    = ta.crossover(close, vwap)    // computed every bar (Pine v6 'and' is lazy)
+vwDn    = ta.crossunder(close, vwap)
+vwLong  = isIntraday and vwUp and close > emaFast and volRatio > 1.2 and rsi > 50
+vwShort = isIntraday and vwDn and close < emaFast and volRatio > 1.2 and rsi < 50
+
+// ───────── Quality score 1-5 ─────────
+qLong  = (close > emaTrend ? 1 : 0) + (stDir < 0 ? 1 : 0) + (adx > 20 ? 1 : 0) +
+     (volRatio > 1.2 ? 1 : 0) + (rsi > 50 and rsi < 70 ? 1 : 0)
+qShort = (close < emaTrend ? 1 : 0) + (stDir > 0 ? 1 : 0) + (adx > 20 ? 1 : 0) +
+     (volRatio > 1.2 ? 1 : 0) + (rsi < 50 and rsi > 30 ? 1 : 0)
+// Fakeouts are counter-trend by nature: score on rejection strength instead of trend
+qFakeL = 2 + (volRatio > 1.2 ? 1 : 0) + (rsi < 40 ? 1 : 0) + (close - low > (high - low) * 0.6 ? 1 : 0)
+qFakeS = 2 + (volRatio > 1.2 ? 1 : 0) + (rsi > 60 ? 1 : 0) + (high - close > (high - low) * 0.6 ? 1 : 0)
+
+rawLong  = (useTrend and pullLong) or (useBreakout and boLong) or (useVwap and vwLong)
+rawShort = (useTrend and pullShort) or (useBreakout and boShort) or (useVwap and vwShort)
+longSig  = barstate.isconfirmed and ((rawLong and qLong >= minQuality) or (useFakeout and fakeLongOk and qFakeL >= minQuality))
+shortSig = allowShort and barstate.isconfirmed and ((rawShort and qShort >= minQuality) or (useFakeout and fakeShortOk and qFakeS >= minQuality))
+
+setupName(bool isLong) =>
+    isLong ? (boLong ? "Breakout" : fakeLongOk ? "Fakeout reversal" : vwLong ? "VWAP reclaim" : "Trend pullback") :
+     (boShort ? "Breakdown" : fakeShortOk ? "Fakeout reversal" : vwShort ? "VWAP reject" : "Trend pullback")
+
+// ───────── Trade plan state ─────────
+var int   tDir   = 0
+var float tEntry = na
+var float tSL    = na
+var float tTP1   = na
+var float tTP2   = na
+var float tTP3   = na
+var float tQty   = na
+var string tSetup = ""
+var int   tQual  = 0
+var string tStatus = "Waiting for setup"
+
+calcQty(float entry, float sl) =>
+    riskAmt = capital * riskPct / 100
+    perUnit = math.abs(entry - sl)
+    q = perUnit > 0 ? riskAmt / perUnit : 0.0
+    capQ = capital * maxAlloc / 100 / entry
+    q2 = math.min(q, capQ)
+    syminfo.type == "crypto" ? math.round(q2, 4) : math.floor(q2)
+
+newTrade = false
+if longSig and tDir != 1
+    tDir   := 1
+    tEntry := close
+    stopA  = swingLow - atr * 0.1
+    stopB  = close - atr * atrStopM
+    tSL    := math.min(math.max(stopA, stopB), close - atr * 0.5)
+    r = tEntry - tSL
+    tTP1 := tEntry + r * tp1R
+    tTP2 := tEntry + r * tp2R
+    tTP3 := tEntry + r * tp3R
+    tQty := calcQty(tEntry, tSL)
+    tSetup := setupName(true)
+    tQual := fakeLongOk and not rawLong ? qFakeL : qLong
+    tStatus := "BUY active"
+    newTrade := true
+else if shortSig and tDir != -1
+    tDir   := -1
+    tEntry := close
+    stopA  = swingHigh + atr * 0.1
+    stopB  = close + atr * atrStopM
+    tSL    := math.max(math.min(stopA, stopB), close + atr * 0.5)
+    r = tSL - tEntry
+    tTP1 := tEntry - r * tp1R
+    tTP2 := tEntry - r * tp2R
+    tTP3 := tEntry - r * tp3R
+    tQty := calcQty(tEntry, tSL)
+    tSetup := setupName(false)
+    tQual := fakeShortOk and not rawShort ? qFakeS : qShort
+    tStatus := "SELL active"
+    newTrade := true
+
+// Track progress of the active plan
+hitTP1 = tDir == 1 ? high >= tTP1 : tDir == -1 ? low <= tTP1 : false
+hitTP2 = tDir == 1 ? high >= tTP2 : tDir == -1 ? low <= tTP2 : false
+hitTP3 = tDir == 1 ? high >= tTP3 : tDir == -1 ? low <= tTP3 : false
+hitSL  = tDir == 1 ? low <= tSL : tDir == -1 ? high >= tSL : false
+if not newTrade and tDir != 0
+    if hitSL
+        tStatus := "Stopped out — wait for next setup"
+        tDir := 0
+    else if hitTP3
+        tStatus := "TP3 hit — trade complete"
+        tDir := 0
+    else if hitTP2
+        tStatus := "TP2 hit — trail stop to TP1"
+    else if hitTP1
+        tStatus := "TP1 hit — move SL to entry"
+
+// ───────── Drawing ─────────
+fmt(float v) => str.tostring(v, format.mintick)
+
+var line lE = na
+var line lS = na
+var line l1 = na
+var line l2 = na
+var line l3 = na
+var label bE = na
+var label bS = na
+var label b1 = na
+var label b2 = na
+var label b3 = na
+
+drawLvl(float y, color c, string txt, line oldL, label oldB) =>
+    line.delete(oldL)
+    label.delete(oldB)
+    ln = line.new(bar_index, y, bar_index + 25, y, color = c, width = 2, extend = extend.none)
+    lb = label.new(bar_index + 25, y, txt + "  " + fmt(y), style = label.style_label_left,
+         color = color.new(c, 15), textcolor = color.white, size = size.small)
+    [ln, lb]
+
+if newTrade and showLevels
+    [a1, a2] = drawLvl(tEntry, color.blue, "ENTRY", lE, bE)
+    lE := a1
+    bE := a2
+    [s1, s2] = drawLvl(tSL, color.red, "SL", lS, bS)
+    lS := s1
+    bS := s2
+    [t11, t12] = drawLvl(tTP1, color.green, "TP1", l1, b1)
+    l1 := t11
+    b1 := t12
+    [t21, t22] = drawLvl(tTP2, color.green, "TP2", l2, b2)
+    l2 := t21
+    b2 := t22
+    [t31, t32] = drawLvl(tTP3, color.lime, "TP3", l3, b3)
+    l3 := t31
+    b3 := t32
+
+if newTrade
+    isL = tDir == 1
+    txt = (isL ? "BUY" : "SELL") + " · " + tSetup + "\nQ " + str.tostring(tQual) + "/5 · Qty " +
+         str.tostring(tQty) + "\nSL " + fmt(tSL) + " · TP1 " + fmt(tTP1)
+    label.new(bar_index, isL ? low : high, txt,
+         style = isL ? label.style_label_up : label.style_label_down,
+         color = isL ? color.new(color.green, 0) : color.new(color.red, 0),
+         textcolor = color.white, size = size.small)
+
+plot(emaFast,  "Fast EMA",  color.new(color.teal, 0))
+plot(emaSlow,  "Slow EMA",  color.new(color.orange, 0))
+plot(emaTrend, "Trend EMA", color.new(color.gray, 20), 2)
+plot(isIntraday ? vwap : na, "VWAP", color.new(color.purple, 0), 1, plot.style_circles)
+plot(stLine, "Supertrend", stDir < 0 ? color.new(color.green, 40) : color.new(color.red, 40), 1, plot.style_linebr)
+plot(showSR ? lastRes : na, "Resistance", color.new(color.red, 50), 1, plot.style_stepline)
+plot(showSR ? lastSup : na, "Support", color.new(color.green, 50), 1, plot.style_stepline)
+plotshape(fakeLongOk and useFakeout,  "Bear trap", shape.xcross, location.belowbar, color.new(color.yellow, 0), size = size.tiny)
+plotshape(fakeShortOk and useFakeout, "Bull trap", shape.xcross, location.abovebar, color.new(color.yellow, 0), size = size.tiny)
+bgcolor(upTrend ? color.new(color.green, 94) : downTrend ? color.new(color.red, 94) : na)
+
+// ───────── Multi-timeframe trend ─────────
+trendOf() =>
+    e21 = ta.ema(close, 21)
+    e50 = ta.ema(close, 50)
+    close > e50 and e21 > e50 ? 1 : close < e50 and e21 < e50 ? -1 : 0
+mtf5  = request.security(syminfo.tickerid, "5",   trendOf(), lookahead = barmerge.lookahead_off)
+mtf15 = request.security(syminfo.tickerid, "15",  trendOf(), lookahead = barmerge.lookahead_off)
+mtf60 = request.security(syminfo.tickerid, "60",  trendOf(), lookahead = barmerge.lookahead_off)
+mtfD  = request.security(syminfo.tickerid, "D",   trendOf(), lookahead = barmerge.lookahead_off)
+tTxt(int t) => t == 1 ? "UP" : t == -1 ? "DOWN" : "SIDE"
+tCol(int t) => t == 1 ? color.lime : t == -1 ? color.red : color.gray
+
+// ───────── Dashboard ─────────
+var table dash = table.new(position.top_right, 2, 16, bgcolor = color.new(#0f1115, 10),
+     border_color = color.new(color.gray, 70), border_width = 1)
+row(int r, string k, string v, color c) =>
+    table.cell(dash, 0, r, k, text_color = color.silver, text_size = size.small, text_halign = text.align_left)
+    table.cell(dash, 1, r, v, text_color = c, text_size = size.small, text_halign = text.align_right)
+
+if showDash and barstate.islast
+    bias = upTrend ? "BULLISH" : downTrend ? "BEARISH" : "SIDEWAYS / WAIT"
+    row(0,  "ADRYN Pro · " + mode, syminfo.ticker, color.white)
+    row(1,  "Bias", bias, upTrend ? color.lime : downTrend ? color.red : color.gray)
+    row(2,  "Status", tStatus, tDir == 1 ? color.lime : tDir == -1 ? color.red : color.silver)
+    row(3,  "Setup", tSetup == "" ? "-" : tSetup + " (Q " + str.tostring(tQual) + "/5)", color.white)
+    row(4,  "Entry", na(tEntry) ? "-" : fmt(tEntry), color.aqua)
+    row(5,  "Stop loss", na(tSL) ? "-" : fmt(tSL), color.red)
+    row(6,  "TP1 / TP2 / TP3", na(tTP1) ? "-" : fmt(tTP1) + " / " + fmt(tTP2) + " / " + fmt(tTP3), color.lime)
+    row(7,  "Quantity", na(tQty) ? "-" : str.tostring(tQty), color.white)
+    row(8,  "Risk amount", str.tostring(capital * riskPct / 100, "#,###.##"), color.orange)
+    row(9,  "RSI / ADX", str.tostring(rsi, "#.0") + " / " + str.tostring(adx, "#.0"), color.white)
+    row(10, "Volume vs avg", str.tostring(volRatio, "#.0") + "x", volRatio > 1.5 ? color.lime : color.white)
+    row(11, "Resistance", na(lastRes) ? "-" : fmt(lastRes), color.red)
+    row(12, "Support", na(lastSup) ? "-" : fmt(lastSup), color.lime)
+    row(13, "Trend 5m / 15m", tTxt(mtf5) + " / " + tTxt(mtf15), tCol(mtf15))
+    row(14, "Trend 1H / Day", tTxt(mtf60) + " / " + tTxt(mtfD), tCol(mtfD))
+    row(15, "Tip", tDir == 0 ? "No trade = good trade. Wait." : "Book part at TP1, trail rest", color.gray)
+
+// ───────── Alerts ─────────
+alertcondition(longSig,  "ADRYN BUY",  "ADRYN BUY {{ticker}} @ {{close}}")
+alertcondition(shortSig, "ADRYN SELL", "ADRYN SELL {{ticker}} @ {{close}}")
+if newTrade
+    alert('{"passphrase":"' + passphrase + '","action":"' + (tDir == 1 ? "buy" : "sell") +
+         '","symbol":"' + syminfo.ticker + '","price":' + str.tostring(tEntry) +
+         ',"stop_loss":' + str.tostring(tSL) + ',"take_profit":' + str.tostring(tTP2) +
+         ',"tp1":' + str.tostring(tTP1) + ',"tp3":' + str.tostring(tTP3) +
+         ',"score":' + str.tostring(tQual) + ',"setup":"' + tSetup + '","timeframe":"' +
+         timeframe.period + '","strategy":"adryn_pro"}', alert.freq_once_per_bar_close)

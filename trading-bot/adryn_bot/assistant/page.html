@@ -1,0 +1,241 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ADRYN Pro Assistant</title>
+<style>
+:root{--bg:#0d1016;--panel:#151a23;--line:#262d3a;--text:#e7eaf0;--muted:#8c95a6;
+--buy:#1fbf75;--sell:#f0506e;--wait:#8c95a6;--accent:#4c8dff;--warn:#f5a623}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:14px/1.45 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+header{display:flex;flex-wrap:wrap;gap:8px 16px;align-items:center;padding:12px 16px;border-bottom:1px solid var(--line);position:sticky;top:0;background:var(--bg);z-index:5}
+header h1{font-size:16px;margin:0 8px 0 0}
+label{color:var(--muted);font-size:12px;display:flex;flex-direction:column;gap:2px}
+input,select,button,textarea{font:inherit;color:var(--text);background:#0f141c;border:1px solid var(--line);border-radius:6px;padding:6px 8px}
+input[type=number]{width:110px}
+button{cursor:pointer;background:var(--accent);border-color:var(--accent);font-weight:600}
+button.ghost{background:transparent;border-color:var(--line);font-weight:500}
+button:disabled{opacity:.5;cursor:wait}
+main{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(0,1fr);gap:16px;padding:16px}
+@media(max-width:900px){main{grid-template-columns:1fr}}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px;margin-bottom:16px}
+.card h2{font-size:13px;letter-spacing:.04em;text-transform:uppercase;color:var(--muted);margin:0 0 10px}
+.row{display:flex;flex-wrap:wrap;gap:8px;align-items:flex-end}
+.signal{display:flex;align-items:center;gap:14px;margin:6px 0 12px}
+.badge{font-size:26px;font-weight:800;padding:6px 16px;border-radius:8px;letter-spacing:.03em}
+.BUY{background:color-mix(in srgb,var(--buy) 20%,transparent);color:var(--buy)}
+.SELL{background:color-mix(in srgb,var(--sell) 20%,transparent);color:var(--sell)}
+.WAIT{background:color-mix(in srgb,var(--wait) 20%,transparent);color:var(--wait)}
+.levels{display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:8px}
+.lvl{background:#0f141c;border:1px solid var(--line);border-radius:8px;padding:8px}
+.lvl span{display:block;font-size:11px;color:var(--muted)}
+.lvl b{font-size:16px;font-variant-numeric:tabular-nums}
+.sl b{color:var(--sell)} .tp b{color:var(--buy)} .en b{color:var(--accent)}
+.meter{height:8px;border-radius:4px;background:linear-gradient(90deg,var(--sell),#333 50%,var(--buy));position:relative;margin:8px 0 4px}
+.meter i{position:absolute;top:-4px;width:4px;height:16px;background:#fff;border-radius:2px}
+ul{margin:6px 0;padding-left:18px} li{margin:3px 0}
+.muted{color:var(--muted)} .small{font-size:12px}
+table{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums}
+th,td{padding:6px;border-bottom:1px solid var(--line);text-align:left;white-space:nowrap}
+tbody tr{cursor:pointer} tbody tr:hover{background:#1b2230}
+.tablewrap{overflow-x:auto}
+.tag{display:inline-block;font-size:11px;padding:1px 6px;border-radius:10px;background:#222a38;margin:1px}
+.tag.breakout,.tag.strong.uptrend{background:#123d2a;color:var(--buy)}
+.tag.breakdown{background:#45172a;color:var(--sell)} .tag.fakeout{background:#4a3410;color:var(--warn)}
+#mentor{white-space:pre-wrap;background:#0f141c;border:1px solid var(--line);border-radius:8px;padding:10px;min-height:80px}
+video{width:100%;max-height:220px;border-radius:8px;background:#000;display:none;margin-top:8px}
+.err{color:var(--sell)}
+.disclaimer{font-size:11px;color:var(--muted);padding:0 16px 24px}
+</style>
+</head>
+<body>
+<header>
+  <h1>ADRYN Pro Assistant</h1>
+  <label>Style<select id="style">
+    <option value="scalping">Scalping (5m)</option>
+    <option value="intraday" selected>Intraday (15m)</option>
+    <option value="swing">Swing (Daily)</option></select></label>
+  <label>Capital<input id="capital" type="number" value="100000" min="1"></label>
+  <label>Risk / trade %<input id="risk" type="number" value="1" step="0.1" min="0.1" max="10"></label>
+  <label>Max in one trade %<input id="alloc" type="number" value="100" min="1" max="500"></label>
+  <label>Min quality<select id="minq"><option>2</option><option selected>3</option><option>4</option><option>5</option></select></label>
+  <label>Units<select id="units"><option value="1">Whole shares</option><option value="0">Fractional (crypto)</option></select></label>
+  <label>Bot passphrase<input id="pass" type="password" placeholder="BOT_PASSPHRASE"></label>
+</header>
+
+<main>
+<section>
+  <div class="card">
+    <h2>Analyse a symbol</h2>
+    <div class="row">
+      <label>Symbol (Yahoo format)<input id="sym" value="RELIANCE.NS" placeholder="RELIANCE.NS, AAPL, BTC-USD"></label>
+      <button id="go">Analyse</button>
+      <label class="small"><span><input type="checkbox" id="auto"> auto-refresh 60 s</span></label>
+      <label>or upload CSV<input id="csv" type="file" accept=".csv"></label>
+    </div>
+    <p class="small muted">NSE: add <b>.NS</b> (TATASTEEL.NS) · BSE: <b>.BO</b> · Nifty: <b>^NSEI</b> · Bank Nifty: <b>^NSEBANK</b> · crypto: <b>BTC-USD</b></p>
+    <div id="result" class="muted">Pick a symbol and press Analyse.</div>
+  </div>
+
+  <div class="card">
+    <h2>Screen mentor (AI reads your chart)</h2>
+    <p class="small muted">Share your TradingView / broker window. The assistant takes a snapshot, combines it with the engine's numbers above and tells you what the chart is doing and the exact levels to act on.</p>
+    <div class="row">
+      <button id="share" class="ghost">Share screen</button>
+      <button id="snap" disabled>Analyse now</button>
+      <label>Every<select id="every"><option value="0">manual</option><option value="60">1 min</option><option value="180">3 min</option><option value="300">5 min</option></select></label>
+      <label>or paste / upload image<input id="img" type="file" accept="image/*"></label>
+    </div>
+    <label style="margin-top:8px">Ask (optional)<input id="q" placeholder="e.g. Is this breakout real? Where should my stop be?"></label>
+    <video id="vid" autoplay muted playsinline></video>
+    <div id="mentor" class="muted" style="margin-top:8px">Mentor notes will appear here.</div>
+  </div>
+</section>
+
+<section>
+  <div class="card">
+    <h2>Scanner: best setups now</h2>
+    <div class="row">
+      <label>Watchlist<select id="wl"></select></label>
+      <label>or your symbols<input id="mysyms" placeholder="TCS.NS, INFY.NS, ..." size="22"></label>
+      <button id="scan">Scan</button>
+      <select id="filter" class="ghost"><option value="">All</option><option value="signal">Has signal</option><option value="breakout">Breakouts</option><option value="breakdown">Breakdowns</option><option value="fakeout">Fakeouts</option><option value="strong uptrend">Strong uptrend</option><option value="strong downtrend">Strong downtrend</option></select>
+    </div>
+    <div class="tablewrap"><table id="scanTable"><thead><tr><th>#</th><th>Symbol</th><th>Price</th><th>Signal</th><th>Trend</th><th>Tags</th></tr></thead><tbody></tbody></table></div>
+    <p id="scanInfo" class="small muted">Click a row to open its full trade plan.</p>
+  </div>
+
+  <div class="card">
+    <h2>TradingView alerts (live)</h2>
+    <div class="tablewrap"><table id="alerts"><thead><tr><th>Time</th><th>Status</th><th>Alert</th></tr></thead><tbody></tbody></table></div>
+  </div>
+</section>
+</main>
+<p class="disclaimer">Educational tool. Signals are probabilities from historical patterns, not guarantees. Market data from Yahoo is delayed. Always use a stop loss and never risk money you can't afford to lose. Not investment advice.</p>
+
+<script>
+const $ = id => document.getElementById(id);
+const store = {get(k,d){try{return localStorage.getItem(k)??d}catch{return d}}, set(k,v){try{localStorage.setItem(k,v)}catch{}}};
+["style","capital","risk","alloc","minq","units","pass","sym"].forEach(id=>{const v=store.get("adryn_"+id,null); if(v!==null)$(id).value=v; $(id).addEventListener("change",()=>store.set("adryn_"+id,$(id).value));});
+
+let lastAnalysis = null, timer = null, snapTimer = null, stream = null;
+const fmt = v => v==null||isNaN(v) ? "-" : Number(v).toLocaleString(undefined,{maximumFractionDigits: Math.abs(v)<10?4:2});
+const esc = s => String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+function prefs(){return {style:$("style").value,capital:+$("capital").value,risk_pct:+$("risk").value,max_alloc_pct:+$("alloc").value,min_quality:+$("minq").value,whole_units:$("units").value==="1"}}
+async function api(path, body, isForm){
+  const opt={method:body?"POST":"GET",headers:{"X-Bot-Passphrase":$("pass").value}};
+  if(body){ if(isForm) opt.body=body; else {opt.headers["Content-Type"]="application/json"; opt.body=JSON.stringify(body);} }
+  const r = await fetch(path,opt); const j = await r.json().catch(()=>({detail:r.statusText}));
+  if(!r.ok) throw new Error(typeof j.detail==="string"?j.detail:JSON.stringify(j.detail));
+  return j;
+}
+
+function render(a){
+  lastAnalysis = a;
+  const s = a.signal, dir = s ? s.direction : "WAIT";
+  const pos = (a.trend_score+100)/2;
+  const bt = a.backtest||{};
+  let h = `<div class="signal"><div class="badge ${dir}">${dir}</div><div><b>${esc(a.symbol)}</b> · ${fmt(a.price)}<br>
+    <span class="muted small">${s?esc(s.setup)+" · quality "+s.quality+"/5 · "+(a.signal_bars_ago?a.signal_bars_ago+" bar(s) ago":"on the last candle"):"No valid setup right now. No trade is a position too."}</span><br>
+    <span class="muted small">Bias <b>${a.bias}</b> · as of ${esc(a.time)}</span></div></div>`;
+  if(s){ h += `<div class="levels">
+    <div class="lvl en"><span>Entry</span><b>${fmt(s.entry)}</b></div>
+    <div class="lvl sl"><span>Stop loss</span><b>${fmt(s.stop_loss)}</b></div>
+    <div class="lvl tp"><span>TP1 (book 1/3, SL to entry)</span><b>${fmt(s.tp1)}</b></div>
+    <div class="lvl tp"><span>TP2 (book 1/3)</span><b>${fmt(s.tp2)}</b></div>
+    <div class="lvl tp"><span>TP3 (final)</span><b>${fmt(s.tp3)}</b></div>
+    <div class="lvl"><span>Quantity</span><b>${fmt(s.qty)}</b></div>
+    <div class="lvl"><span>Max loss</span><b style="color:var(--sell)">${fmt(s.risk_amount)}</b></div>
+    <div class="lvl"><span>Capital used</span><b>${fmt(s.capital_used)}</b></div></div>`;}
+  h += `<p class="small muted" style="margin:12px 0 0">Trend strength ${a.trend_score} (−100 bear … +100 bull)</p><div class="meter"><i style="left:calc(${pos}% - 2px)"></i></div>`;
+  h += `<h2 style="margin-top:14px">What the chart says</h2><ul>${a.notes.map(n=>`<li>${esc(n)}</li>`).join("")}</ul>`;
+  h += `<h2>Watch these levels</h2><ul>${a.watch.map(n=>`<li>${esc(n)}</li>`).join("")}</ul>`;
+  const L=a.levels; h += `<div class="levels">${[["Resistance",L.resistance],["Support",L.support],["Range high",L.range_high],["Range low",L.range_low],["VWAP",L.vwap],["ATR",L.atr]].map(([k,v])=>`<div class="lvl"><span>${k}</span><b>${fmt(v)}</b></div>`).join("")}</div>`;
+  h += `<p class="small muted">RSI ${a.indicators.rsi} · ADX ${a.indicators.adx} · Volume ${a.indicators.volume_ratio}x · Supertrend ${a.indicators.supertrend} · Tags: ${(a.tags||[]).map(t=>`<span class="tag">${esc(t)}</span>`).join("")||"-"}</p>`;
+  if(bt.trades!==undefined){
+    h += `<h2>Backtest on this data (${bt.trades} trades)</h2>`;
+    h += bt.trades ? `<p class="small">TP1 hit rate <b>${bt.win_rate_tp1}%</b> · avg <b>${bt.avg_r}R</b> per trade · total ${bt.total_r}R · profit factor ${bt.profit_factor??"-"}</p>
+      <div class="tablewrap"><table><thead><tr><th>Setup</th><th>Trades</th><th>TP1 %</th><th>Avg R</th></tr></thead><tbody>${Object.entries(bt.by_setup).map(([k,v])=>`<tr><td>${esc(k)}</td><td>${v.trades}</td><td>${v.win_rate_tp1}</td><td>${v.avg_r}</td></tr>`).join("")}</tbody></table></div>
+      <p class="small muted">Past results on ${a.style} data, before fees/slippage. Small samples (under ~30 trades) are not reliable. Positive avg R = the setup has made money on this symbol historically.</p>`
+      : `<p class="small muted">No signals in the downloaded history.</p>`;
+  }
+  $("result").className=""; $("result").innerHTML = h;
+}
+
+async function analyse(){
+  $("go").disabled=true; $("result").innerHTML='<span class="muted">Analysing…</span>';
+  try{ {const j=await api("/api/desk",{...prefs(),symbol:$("sym").value.trim()}); render({...j.analyst,symbol:j.symbol});}; }
+  catch(e){ $("result").innerHTML=`<span class="err">${esc(e.message)}</span>`; }
+  finally{ $("go").disabled=false; }
+}
+$("go").onclick = analyse;
+$("sym").addEventListener("keydown",e=>{if(e.key==="Enter")analyse()});
+$("auto").onchange = ()=>{clearInterval(timer); if($("auto").checked) timer=setInterval(analyse,60000);};
+$("csv").onchange = async ()=>{ const f=$("csv").files[0]; if(!f)return; const fd=new FormData(); fd.append("file",f); fd.append("prefs",JSON.stringify(prefs()));
+  try{ {const j=await api("/api/desk-csv",fd,true); render({...j.analyst,symbol:j.symbol});}; }catch(e){ $("result").innerHTML=`<span class="err">${esc(e.message)}</span>`; } };
+
+// Scanner
+let scanRows=[];
+async function loadLists(){ try{ const w=await api("/api/watchlists"); $("wl").innerHTML=Object.keys(w).map(k=>`<option>${esc(k)}</option>`).join(""); }catch(e){ $("wl").innerHTML='<option value="">(enter passphrase)</option>'; } }
+$("pass").addEventListener("change",loadLists); loadLists();
+function drawScan(){
+  const f=$("filter").value;
+  const rows=scanRows.filter(r=>!r.error && (!f || (f==="signal"?r.signal:(r.tags||[]).includes(f))));
+  $("scanTable").querySelector("tbody").innerHTML = rows.map((r,i)=>{const s=r.signal;
+    return `<tr data-sym="${esc(r.symbol)}"><td>${i+1}</td><td><b>${esc(r.symbol)}</b></td><td>${fmt(r.price)}</td>
+    <td>${s?`<span class="tag ${s.direction==="BUY"?"breakout":"breakdown"}">${s.direction}</span> ${esc(s.setup)} Q${s.quality}`:'<span class="muted">wait</span>'}</td>
+    <td style="color:${r.trend_score>0?"var(--buy)":r.trend_score<0?"var(--sell)":"var(--muted)"}">${r.trend_score}</td>
+    <td>${(r.tags||[]).map(t=>`<span class="tag ${esc(t)}">${esc(t)}</span>`).join("")}</td></tr>`}).join("");
+  const errs=scanRows.filter(r=>r.error).length;
+  $("scanInfo").textContent = `${rows.length} shown${errs?` · ${errs} symbol(s) had no data`:""} · click a row for the full plan.`;
+}
+$("filter").onchange=drawScan;
+$("scanTable").addEventListener("click",e=>{const tr=e.target.closest("tr[data-sym]"); if(tr){$("sym").value=tr.dataset.sym; store.set("adryn_sym",tr.dataset.sym); analyse(); window.scrollTo({top:0,behavior:"smooth"});}});
+$("scan").onclick = async ()=>{
+  $("scan").disabled=true; $("scanInfo").textContent="Scanning… (first scan of a list can take ~30 s)";
+  const mine=$("mysyms").value.split(/[\s,]+/).filter(Boolean);
+  try{ const j=await api("/api/scan",{...prefs(),watchlist:$("wl").value,symbols:mine.length?mine:null}); scanRows=j.results; drawScan(); }
+  catch(e){ $("scanInfo").innerHTML=`<span class="err">${esc(e.message)}</span>`; }
+  finally{ $("scan").disabled=false; }
+};
+
+// Screen mentor
+async function sendImage(blob){
+  $("mentor").className=""; $("mentor").textContent="Reading the chart…"; $("snap").disabled=true;
+  if(!lastAnalysis){ $("mentor").innerHTML='<span class="err">Analyse a symbol first.</span>'; $("snap").disabled=!stream; return; }
+  const fd=new FormData(); fd.append("image",blob,"chart.png");
+  fd.append("symbol",lastAnalysis.symbol); fd.append("question",$("q").value);
+  try{ const j=await api("/api/mentor-ai",fd,true); const ai=j.ai, v=j.verdict;
+    $("mentor").textContent=`AI: ${ai.action} (${ai.agrees_with_engine?"agrees":"disagrees"} with engine)\n${ai.view}\n\nPlan: ${ai.plan}\nRisk: ${ai.comment}\n\nFinal: ${v.action} · confidence ${v.confidence}% · ${v.headline}\n— ${new Date().toLocaleTimeString()}`; }
+  catch(e){ $("mentor").innerHTML=`<span class="err">${esc(e.message)}</span>`; }
+  finally{ $("snap").disabled=!stream; }
+}
+async function snapshot(){
+  const v=$("vid"); if(!stream||!v.videoWidth) return;
+  const c=document.createElement("canvas"); const scale=Math.min(1,1600/v.videoWidth);
+  c.width=v.videoWidth*scale; c.height=v.videoHeight*scale; c.getContext("2d").drawImage(v,0,0,c.width,c.height);
+  c.toBlob(b=>b&&sendImage(b),"image/png");
+}
+$("share").onclick = async ()=>{
+  if(stream){ stream.getTracks().forEach(t=>t.stop()); return; }
+  try{ stream = await navigator.mediaDevices.getDisplayMedia({video:true,audio:false}); }
+  catch(e){ $("mentor").innerHTML=`<span class="err">Screen share was not allowed: ${esc(e.message)}</span>`; return; }
+  $("vid").srcObject=stream; $("vid").style.display="block"; $("snap").disabled=false; $("share").textContent="Stop sharing";
+  stream.getVideoTracks()[0].onended=()=>{stream=null; $("vid").style.display="none"; $("snap").disabled=true; $("share").textContent="Share screen"; clearInterval(snapTimer);};
+  $("every").onchange();
+};
+$("snap").onclick = snapshot;
+$("every").onchange = ()=>{ clearInterval(snapTimer); const s=+$("every").value; if(s&&stream) snapTimer=setInterval(snapshot,s*1000); };
+$("img").onchange = ()=>{ const f=$("img").files[0]; if(f) sendImage(f); };
+document.addEventListener("paste",e=>{ const it=[...(e.clipboardData?.items||[])].find(i=>i.type.startsWith("image/")); if(it) sendImage(it.getAsFile()); });
+
+// TradingView alerts feed
+async function alerts(){ try{ const r=await fetch("/status"); const j=await r.json();
+  $("alerts").querySelector("tbody").innerHTML = (j.recent_alerts||[]).slice(0,15).map(a=>{const p=a.payload||{};
+    return `<tr><td>${esc((a.time||"").slice(11,19))}</td><td>${esc(a.status)}</td><td>${esc((p.action||"").toUpperCase())} ${esc(p.symbol||"")} @ ${esc(p.price??"")} ${p.setup?"· "+esc(p.setup):""}</td></tr>`}).join("") || '<tr><td colspan="3" class="muted">No alerts yet. Connect a TradingView alert to /webhook.</td></tr>';
+}catch{} }
+alerts(); setInterval(alerts,10000);
+</script>
+</body>
+</html>

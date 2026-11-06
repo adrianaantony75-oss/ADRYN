@@ -27,6 +27,12 @@ def create_app(settings: Settings | None = None, engine: Engine | None = None) -
     engine = engine or Engine(settings, build_executor(settings))
     alerts: deque[dict] = deque(maxlen=50)
     app = FastAPI(title="ADRYN Trading Bot", version="0.1.0")
+    try:
+        from .assistant.web import create_router
+
+        app.include_router(create_router(settings.passphrase))
+    except ImportError as exc:  # pandas/numpy not installed: webhook bot still works
+        log.warning("trading desk disabled (%s); pip install pandas numpy", exc)
 
     if settings.passphrase == "change-me":
         log.warning("BOT_PASSPHRASE is the default 'change-me' — set your own before going live")

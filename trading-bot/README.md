@@ -95,6 +95,18 @@ the Pine inputs or use a futures account.
 
 Endpoints: `GET /` dashboard · `POST /webhook` · `GET /status` (JSON) · `GET /health` · `POST /halt`.
 
+## Trading desk (work in progress)
+
+Open http://localhost:8080/desk after starting the bot. It shows:
+
+1. **Chart analyst**: trend, support/resistance, VWAP, RSI/ADX/volume.
+2. **Market scanner**: ranks NIFTY 50, indices, US stocks or crypto by fresh signals, breakouts, breakdowns and fakeouts.
+3. **Mentor**: plain-English guidance; optional AI second opinion from your shared screen (needs `ANTHROPIC_API_KEY`).
+4. **Cross-checker**: higher-timeframe trend, room to target, volume, ADX, RSI, signal freshness, historical edge.
+5. **Final verdict**: BUY / SELL / half size / SKIP with entry, SL, TP1-TP3 and quantity from your capital.
+
+Data comes from FYERS when `FYERS_APP_ID` and `FYERS_ACCESS_TOKEN` are set (untested here, needs your account), otherwise Yahoo (delayed). Backtest numbers per setup are shown so you can judge accuracy yourself; no setup is guaranteed.
+
 ## Tests
 
 ```bash
