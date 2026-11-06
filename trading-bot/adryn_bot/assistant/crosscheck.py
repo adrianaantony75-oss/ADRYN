@@ -58,7 +58,8 @@ def cross_check(a: dict, htf: str) -> list[dict]:
         f"Signal printed {a.get('signal_bars_ago') or 0} bar(s) ago")
     bt = (a.get("backtest") or {}).get("by_setup", {}).get(s["setup"])
     if bt and bt["trades"] >= 10:
-        add("Setup has a historical edge here", bt["avg_r"] > 0, False,
+        # A setup that has lost money over 20+ past trades on this symbol is a hard no.
+        add("Setup has a historical edge here", bt["avg_r"] > 0, bt["trades"] >= 20,
             f"{bt['trades']} past trades: TP1 hit {bt['win_rate_tp1']}%, avg {bt['avg_r']}R")
     else:
         n = bt["trades"] if bt else 0

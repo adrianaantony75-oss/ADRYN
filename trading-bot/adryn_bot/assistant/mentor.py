@@ -42,21 +42,31 @@ def rule_mentor(a: dict, htf: str, style: str) -> list[str]:
     return out
 
 
-AI_SYSTEM = """You are a veteran discretionary trader acting as a mentor. You receive the
-computed state of a chart (JSON from a rule-based engine; treat its numbers as facts) and
-sometimes a screenshot. Give your independent opinion: would you take the engine's trade,
-the opposite, or wait? Be concrete with prices. Never promise profit. Keep each field short."""
+AI_SYSTEM = """You are a veteran discretionary trader acting as a mentor. You may receive a
+screenshot of the trader's screen (a chart in their broker app) and/or the computed state of the
+chart from a rule-based engine (JSON; treat its numbers as facts and prefer them over reading
+numbers off the image). Read the symbol, timeframe, trend, key levels, candles and indicators.
+Give your independent call: BUY, SELL or WAIT, with entry, stop loss and a target of at least
+2x the risk. If there is no engine state, base the call only on the screenshot and say so.
+If the chart is unclear or choppy, say WAIT. Never promise profit. Keep each field short."""
 
 AI_SCHEMA = {
     "type": "object",
     "properties": {
+        "symbol_seen": {"type": "string",
+                        "description": "ticker visible on the screen, e.g. SBIN or NIFTY50; empty if unclear"},
+        "timeframe_seen": {"type": "string", "description": "chart timeframe visible, e.g. 5m; empty if unclear"},
         "action": {"type": "string", "enum": ["BUY", "SELL", "WAIT"]},
+        "entry": {"type": "number", "description": "0 if WAIT"},
+        "stop_loss": {"type": "number", "description": "0 if WAIT"},
+        "target": {"type": "number", "description": "0 if WAIT"},
         "agrees_with_engine": {"type": "boolean"},
         "view": {"type": "string", "description": "2-4 sentences on what the chart is doing"},
         "plan": {"type": "string", "description": "if-then plan with exact levels"},
         "comment": {"type": "string", "description": "one sentence: main risk or why you disagree"},
     },
-    "required": ["action", "agrees_with_engine", "view", "plan", "comment"],
+    "required": ["symbol_seen", "timeframe_seen", "action", "entry", "stop_loss", "target",
+                 "agrees_with_engine", "view", "plan", "comment"],
     "additionalProperties": False,
 }
 
@@ -73,7 +83,8 @@ def ai_mentor(context: dict, image: bytes | None = None, media_type: str = "imag
         content.append({"type": "image", "source": {
             "type": "base64", "media_type": media_type,
             "data": base64.standard_b64encode(image).decode()}})
-    text = (question or "Review this setup.") + "\n\nEngine state:\n" + json.dumps(context, default=str)
+    text = (question or "Review this chart and give your call.")
+    text += "\n\nContext (JSON):\n" + json.dumps(context, default=str)
     content.append({"type": "text", "text": text})
     response = client.beta.messages.create(
         model=MODEL,

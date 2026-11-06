@@ -20,7 +20,7 @@ cp .env.example .env            # then edit BOT_PASSPHRASE to your own secret
 python -m adryn_bot --port 8080
 ```
 
-Open http://localhost:8080 — a dashboard that shows every alert received, open positions and trades.
+Open http://localhost:8080 for the trading desk (see below). The webhook dashboard with every alert received, open positions and trades is at http://localhost:8080/bot.
 
 Check it works without TradingView:
 
@@ -95,9 +95,14 @@ the Pine inputs or use a futures account.
 
 Endpoints: `GET /` dashboard · `POST /webhook` · `GET /status` (JSON) · `GET /health` · `POST /halt`.
 
-## Trading desk (work in progress)
+## Trading desk (one screen)
 
-Open http://localhost:8080/desk after starting the bot. It shows:
+Open http://localhost:8080/desk on your second monitor and enter your `BOT_PASSPHRASE` in the top bar.
+Left: candlestick chart (5 years daily in Swing mode, recent 5m/15m in Scalping/Intraday) with
+BUY/SELL arrows (✓ won / ✗ lost in the backtest), EMAs, VWAP and a long/short position box
+(green = target zone, red = stop zone). Or switch to **My screen** and press **Share screen**:
+the browser shows only the window you pick, view-only (it cannot click or type), and the AI reads
+it every minute and loads the symbol it sees. Right:
 
 1. **Chart analyst**: trend, support/resistance, VWAP, RSI/ADX/volume.
 2. **Market scanner**: ranks NIFTY 50, indices, US stocks or crypto by fresh signals, breakouts, breakdowns and fakeouts.

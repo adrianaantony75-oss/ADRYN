@@ -103,7 +103,7 @@ def test_state_persists(setup):
 def test_dashboard_and_status(setup):
     _, _, c = setup
     post(c, alert("buy"))
-    assert "ADRYN Trading Bot" in c.get("/").text
+    assert "ADRYN Trading Bot" in c.get("/bot").text
     s = c.get("/status").json()
     assert s["positions"][0]["symbol"] == "BTCUSDT"
     assert "passphrase" not in json.dumps(s["recent_alerts"])

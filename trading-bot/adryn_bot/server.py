@@ -10,7 +10,7 @@ from collections import deque
 from datetime import UTC, datetime
 
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 from pydantic import ValidationError
 
 from .brokers import build_executor
@@ -88,7 +88,11 @@ def create_app(settings: Settings | None = None, engine: Engine | None = None) -
         engine.set_halted(bool(body.get("halted", True)))
         return {"halted": engine.ledger.halted}
 
-    @app.get("/", response_class=HTMLResponse)
+    @app.get("/")
+    def home() -> RedirectResponse:
+        return RedirectResponse("/desk")
+
+    @app.get("/bot", response_class=HTMLResponse)
     def dashboard() -> str:
         snap = engine.snapshot()
         esc = html.escape

@@ -180,13 +180,14 @@ def create_router(passphrase: str, fetch: Fetcher | None = None, cache_seconds: 
         return {"count": len(slim), "results": slim}
 
     @router.post("/api/mentor-ai")
-    async def mentor_ai(symbol: str = Form(...), question: str = Form(""),
+    async def mentor_ai(symbol: str = Form(""), question: str = Form(""), prefs: str = Form("{}"),
                         image: UploadFile | None = File(None),
                         x_bot_passphrase: str | None = Header(None)) -> dict:
         auth(x_bot_passphrase)
-        state = last_desk.get(symbol.upper())
-        if not state:
-            raise HTTPException(409, "analyse the symbol first")
+        p = Prefs.model_validate(json.loads(prefs or "{}"))
+        state = last_desk.get(symbol.upper()) if symbol else None
+        if not state and image is None:
+            raise HTTPException(409, "analyse a symbol or share your screen first")
         data, media = None, "image/png"
         if image is not None:
             data = await image.read()
@@ -194,18 +195,29 @@ def create_router(passphrase: str, fetch: Fetcher | None = None, cache_seconds: 
                 raise HTTPException(413, "image larger than 5 MB")
             if image.content_type in {"image/png", "image/jpeg", "image/webp", "image/gif"}:
                 media = image.content_type
-        a = state["analyst"]
-        context = {"symbol": state["symbol"], "style": a["style"], "price": a["price"],
-                   "bias": a["bias"], "signal": a["signal"], "levels": a["levels"],
-                   "indicators": a["indicators"], "higher_tf": state["higher_tf"],
-                   "checks": state["checks"], "backtest": a.get("backtest")}
+        context: dict = {"account": {"capital": p.capital, "risk_pct": p.risk_pct},
+                         "style": p.style}
+        if state:
+            a = state["analyst"]
+            context["engine"] = {
+                "symbol": state["symbol"], "price": a["price"], "bias": a["bias"],
+                "signal": a["signal"], "levels": a["levels"], "indicators": a["indicators"],
+                "higher_tf": state["higher_tf"], "checks": state["checks"],
+                "backtest": a.get("backtest")}
         try:
             ai = ai_mentor(context, data, media, question or None,
-                           effort="low" if a["style"] == "scalping" else "medium")
+                           effort="low" if p.style == "scalping" else "medium")
         except RuntimeError as exc:
             raise HTTPException(503, str(exc)) from exc
         except Exception as exc:
             raise HTTPException(502, f"AI request failed: {exc}") from exc
-        return {"ai": ai, "verdict": final_verdict(a, state["checks"], ai)}
+        if state:
+            verdict = final_verdict(state["analyst"], state["checks"], ai)
+        else:
+            verdict = {"action": ai["action"], "confidence": None, "size": "unverified",
+                       "headline": "AI read of your screen only. Not cross-checked by the engine: "
+                                   "click the detected symbol to verify.",
+                       "reasons": [ai.get("comment", "")]}
+        return {"ai": ai, "verdict": verdict, "engine_used": bool(state)}
 
     return router
