@@ -107,6 +107,17 @@ Open http://localhost:8080/desk after starting the bot. It shows:
 
 Data comes from FYERS when `FYERS_APP_ID` and `FYERS_ACCESS_TOKEN` are set (untested here, needs your account), otherwise Yahoo (delayed). Backtest numbers per setup are shown so you can judge accuracy yourself; no setup is guaranteed.
 
+## FYERS auto-trader
+
+`python -m adryn_bot.autotrader` checks your symbols every minute on closed candles and takes
+only A+ signals: quality 5/5, every cross-check passed, full-size verdict. Target is
+`AUTO_RR` x risk (1:2 by default), stop from the plan. In live mode it sends a market entry,
+then a stop-loss (SL-M) and a target (limit) order, and cancels the other one when either fills.
+Positions are squared off at `AUTO_SQUAREOFF`. Daily trade and loss limits stop it for the day.
+
+`AUTO_MODE=paper` (default) sends nothing to FYERS: run it for a few weeks and check
+`auto_state.json` before going live. Live order code is untested against a real FYERS account.
+
 ## Tests
 
 ```bash
