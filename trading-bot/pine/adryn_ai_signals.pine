@@ -1,0 +1,103 @@
+//@version=6
+// ADRYN AI Signals — confluence strategy that sends webhook alerts to the ADRYN bot.
+// Paste into TradingView > Pine Editor > "Add to chart". Then create ONE alert:
+//   Condition: "ADRYN AI Signals"  ->  "alert() function calls only"
+//   Webhook URL: https://<your-public-host>/webhook
+//   Message: leave empty (the script builds the JSON itself)
+// Educational tool, not financial advice. Backtest and paper-trade first.
+strategy("ADRYN AI Signals", overlay = true, initial_capital = 10000,
+     default_qty_type = strategy.percent_of_equity, default_qty_value = 10,
+     commission_type = strategy.commission.percent, commission_value = 0.05,
+     pyramiding = 0, process_orders_on_close = true)
+
+// ---------- Inputs ----------
+grpS = "Signal"
+fastLen   = input.int(21,  "Fast EMA",           minval = 2,  group = grpS)
+slowLen   = input.int(55,  "Slow EMA",           minval = 3,  group = grpS)
+trendLen  = input.int(200, "Trend EMA",          minval = 10, group = grpS)
+rsiLen    = input.int(14,  "RSI length",         minval = 2,  group = grpS)
+adxLen    = input.int(14,  "ADX length",         minval = 2,  group = grpS)
+adxMin    = input.float(18, "Min ADX (trend strength)", group = grpS)
+minScore  = input.int(4,   "Min confluence score (0-5)", minval = 1, maxval = 5, group = grpS)
+allowShort = input.bool(true, "Allow shorts", group = grpS)
+
+grpR = "Risk"
+atrLen    = input.int(14,    "ATR length",          minval = 1, group = grpR)
+slMult    = input.float(1.5, "Stop loss  (x ATR)",  step = 0.1, group = grpR)
+tpMult    = input.float(3.0, "Take profit (x ATR)", step = 0.1, group = grpR)
+
+grpW = "Webhook"
+passphrase = input.string("change-me", "Webhook passphrase (must match BOT_PASSPHRASE)", group = grpW)
+botSymbol  = input.string("", "Symbol override for bot (blank = chart ticker)", group = grpW)
+
+// ---------- Indicators ----------
+emaFast  = ta.ema(close, fastLen)
+emaSlow  = ta.ema(close, slowLen)
+emaTrend = ta.ema(close, trendLen)
+rsi      = ta.rsi(close, rsiLen)
+[diPlus, diMinus, adx] = ta.dmi(adxLen, adxLen)
+atr      = ta.atr(atrLen)
+volOk    = volume > ta.sma(volume, 20)
+[macdLine, macdSig, _] = ta.macd(close, 12, 26, 9)
+
+// ---------- Confluence score (each condition = 1 point) ----------
+longScore = (close > emaTrend ? 1 : 0) + (emaFast > emaSlow ? 1 : 0) +
+     (rsi > 50 and rsi < 70 ? 1 : 0) + (macdLine > macdSig ? 1 : 0) + (volOk ? 1 : 0)
+shortScore = (close < emaTrend ? 1 : 0) + (emaFast < emaSlow ? 1 : 0) +
+     (rsi < 50 and rsi > 30 ? 1 : 0) + (macdLine < macdSig ? 1 : 0) + (volOk ? 1 : 0)
+
+trending  = adx >= adxMin
+longSig   = trending and longScore >= minScore and
+     (ta.crossover(emaFast, emaSlow) or (longScore[1] < minScore and emaFast > emaSlow))
+shortSig  = allowShort and trending and shortScore >= minScore and
+     (ta.crossunder(emaFast, emaSlow) or (shortScore[1] < minScore and emaFast < emaSlow))
+
+exitLong  = ta.crossunder(close, emaSlow)
+exitShort = ta.crossover(close, emaSlow)
+
+sym = botSymbol == "" ? syminfo.ticker : botSymbol
+
+payload(string action, float sl, float tp, int score) =>
+    '{"passphrase":"' + passphrase + '","action":"' + action + '","symbol":"' + sym +
+     '","price":' + str.tostring(close) + ',"stop_loss":' + str.tostring(sl) +
+     ',"take_profit":' + str.tostring(tp) + ',"score":' + str.tostring(score) +
+     ',"timeframe":"' + timeframe.period + '","strategy":"adryn_ai_signals"}'
+
+// ---------- Orders + alerts ----------
+if longSig and strategy.position_size <= 0
+    sl = close - atr * slMult
+    tp = close + atr * tpMult
+    strategy.entry("Long", strategy.long)
+    strategy.exit("Long X", "Long", stop = sl, limit = tp)
+    alert(payload("buy", sl, tp, longScore), alert.freq_once_per_bar_close)
+
+if shortSig and strategy.position_size >= 0
+    sl = close + atr * slMult
+    tp = close - atr * tpMult
+    strategy.entry("Short", strategy.short)
+    strategy.exit("Short X", "Short", stop = sl, limit = tp)
+    alert(payload("sell", sl, tp, shortScore), alert.freq_once_per_bar_close)
+
+// Opposite trend break closes the position on the bot side as well.
+if strategy.position_size > 0 and exitLong and not shortSig
+    strategy.close("Long")
+    alert(payload("close", 0, 0, 0), alert.freq_once_per_bar_close)
+if strategy.position_size < 0 and exitShort and not longSig
+    strategy.close("Short")
+    alert(payload("close", 0, 0, 0), alert.freq_once_per_bar_close)
+
+// ---------- Visuals ----------
+plot(emaFast,  "Fast EMA",  color.new(color.teal, 0))
+plot(emaSlow,  "Slow EMA",  color.new(color.orange, 0))
+plot(emaTrend, "Trend EMA", color.new(color.gray, 30), 2)
+plotshape(longSig,  "Buy",  shape.labelup,   location.belowbar, color.new(color.green, 0), text = "BUY",  textcolor = color.white)
+plotshape(shortSig, "Sell", shape.labeldown, location.abovebar, color.new(color.red, 0),   text = "SELL", textcolor = color.white)
+
+var table info = table.new(position.top_right, 2, 3, bgcolor = color.new(color.black, 80))
+if barstate.islast
+    table.cell(info, 0, 0, "Long score",  text_color = color.white)
+    table.cell(info, 1, 0, str.tostring(longScore) + "/5", text_color = color.lime)
+    table.cell(info, 0, 1, "Short score", text_color = color.white)
+    table.cell(info, 1, 1, str.tostring(shortScore) + "/5", text_color = color.red)
+    table.cell(info, 0, 2, "ADX",         text_color = color.white)
+    table.cell(info, 1, 2, str.tostring(adx, "#.0"), text_color = trending ? color.lime : color.gray)

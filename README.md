@@ -15,6 +15,9 @@ ADRYN is an internal analytics workspace for **ADRYN Learning**, a fictional dig
 - Model health: temporal evaluation, calibration, importance, input drift and run provenance.
 - Trust operations: quality remediation, privacy screening, CRM/ERP reconciliation and AI review evaluation.
 
+### TradingView trading bot
+A separate TradingView webhook trading bot lives in [`trading-bot/`](trading-bot/README.md): a Pine Script strategy that sends alerts, and a Python server that paper-trades them (or routes them to an exchange via ccxt).
+
 ### Run locally
 Python 3.13 is the tested interpreter. PostgreSQL is optional for local analysis.
 
