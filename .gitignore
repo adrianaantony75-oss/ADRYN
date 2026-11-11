@@ -55,3 +55,6 @@ coverage.xml
 .vscode/
 .DS_Store
 Thumbs.db
+
+# Day Trader skills: personal config (SEC name/email) and trading state
+/trader/
